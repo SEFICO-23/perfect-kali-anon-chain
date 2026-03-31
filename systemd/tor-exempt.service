@@ -1,0 +1,31 @@
+[Unit]
+Description=Tor nftables exemption for Mullvad VPN-over-Tor
+# Must run before mullvad-daemon so exemption is in place when firewall starts
+Before=mullvad-daemon.service
+# Must run after network is available (nftables needs netfilter loaded)
+After=network.target
+
+[Service]
+Type=oneshot
+# Script creates the inet tor_exempt nftables table
+ExecStart=/etc/tor-exempt-nft.sh
+# Stay "active" after the script exits so dependents know it ran
+RemainAfterExit=yes
+# Clean up nftables table when the service is stopped
+ExecStop=/usr/sbin/nft delete table inet tor_exempt
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

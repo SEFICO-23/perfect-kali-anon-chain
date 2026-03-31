@@ -1,0 +1,16 @@
+[Unit]
+Description=Kali Anon Chain — Post-boot health check
+After=mullvad-daemon.service tor@default.service kali-dns.service tor-exempt.service
+Wants=mullvad-daemon.service tor@default.service
+
+[Service]
+Type=oneshot
+# Wait for Mullvad to establish tunnel and Tor to bootstrap
+ExecStartPre=/bin/sleep 30
+ExecStart=/opt/kali-anon-chain/scripts/health-check.sh --quick
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Enforce Mullvad multihop RS->PT after boot
+After=mullvad-daemon.service tor@default.service
+Wants=mullvad-daemon.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=/etc/mullvad-multihop-fix.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

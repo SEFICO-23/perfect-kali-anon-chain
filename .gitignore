@@ -1,0 +1,41 @@
+# Credentials — never commit these
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# Mullvad account numbers
+account.txt
+account_number.txt
+
+# WireGuard configs (contain private keys)
+wg*.conf
+!config/wsl.conf
+!config/proxychains4.conf
+
+# Tor sensitive files
+hs_ed25519_secret_key
+hs_ed25519_public_key
+hostname
+cached-*
+
+# Log files (may capture relay IPs, timings)
+*.log
+
+# Project data (sensitive)
+projects/*/reports/
+projects/*/output/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+*~
+
+# Claude Code
+.claude/
+lib/stealth_fetch/tmp_b64.txt

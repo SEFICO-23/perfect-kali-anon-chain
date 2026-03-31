@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VPN-over-Tor Chain — 3D Globe Visualization</title>
+<style>
+  /* ── Reset ─────────────────────────────────── */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ── Base ──────────────────────────────────── */
+  :root {
+    --bg: #030810;
+    --panel: rgba(5, 12, 28, 0.92);
+    --border: rgba(0, 220, 255, 0.15);
+    --cyan: #00e5ff;
+    --magenta: #ff00e5;
+    --green: #00ff88;
+    --red: #ff2255;
+    --amber: #ffaa00;
+    --dim: #2a3a5c;
+    --text: #c8dce8;
+    --text-dim: #4a6080;
+    --font: 'Consolas', 'SF Mono', 'Fira Code', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    height: 100vh;
+    overflow: hidden;
+    cursor: default;
+    user-select: none;
+  }
+
+  /* ── App Layout ────────────────────────────── */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  /* ── Top Bar ───────────────────────────────── */
+  #topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+    flex-shrink: 0;
+  }
+
+  #topbar h1 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 6px 16px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--font);
+    font-size: 0.7rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn:hover { border-color: var(--cyan); color: var(--text); }
+  .btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,229,255,0.08); }
+  .btn.play-btn { border-color: var(--green); color: var(--green); }
+  .btn.play-btn:hover { background: rgba(0,255,136,0.08); }
+  .btn.play-btn.running { border-color: var(--red); color: var(--red); }
+  .btn.play-btn.running:hover { background: rgba(255,34,85,0.08); }
+  .btn.attack-btn { border-color: var(--amber); color: var(--amber); }
+  .btn.attack-btn:hover { background: rgba(255,170,0,0.08); }
+  .btn.attack-btn.active { background: rgba(255,170,0,0.12); border-color: var(--amber); color: var(--amber); }
+
+  .speed-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+
+  .speed-ctrl input[type="range"] {
+    width: 60px;
+    accent-color: var(--cyan);
+    height: 3px;
+  }
+
+  /* ── Main Area ─────────────────────────────── */
+  #main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #mapCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+
+  #mapCanvas:active { cursor: grabbing; }
+
+  /* ── Info Panel (bottom) ───────────────────── */
+  #infoPanel {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(600px, 90%);
+    padding: 12px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    backdrop-filter: blur(12px);
+    z-index: 50;
+    transition: opacity 0.3s;
+  }
+
+  .step-num {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--cyan);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .step-text {
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  .step-text code {
+    background: rgba(0,229,255,0.1);
+    border: 1px solid rgba(0,229,255,0.2);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--cyan);
+    font-size: 0.72rem;
+  }
+
+  /* ── Detection Badge ───────────────────────── */
+  #detectBadge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    z-index: 50;
+    opacity: 0;
+    transition: opacity 0.5s;
+    min-width: 180px;
+  }
+
+  #detectBadge.visible { opacity: 1; }
+
+  .detect-label {
+    font-size: 0.55rem;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .detect-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 3px;
+    font-size: 0.75rem;
+  }
+
+  .detect-row .lbl { color: var(--text-dim); font-size: 0.65rem; min-width: 50px; }
+  .detect-row .val { font-weight: 700; }
+  .detect-row .val.safe { color: var(--green); }
+  .detect-row .val.warn { color: var(--amber); }
+
+  /* ── Local Machine Inset ───────────────────── */
+  #localInset {
+    position: absolute;
+    bottom: 80px;
+    left: 12px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    z-index: 50;
+    font-size: 0.65rem;
+    opacity: 0.7;
+    transition: opacity 0.3s;
+  }
+
+  #localInset:hover { opacity: 1; }
+
+  .inset-title {
+    font-size: 0.55rem;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  .inset-flow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .inset-node {
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    font-size: 0.6rem;
+    white-space: nowrap;
+  }
+
+  .inset-node.win { border-color: rgba(0,229,255,0.3); color: var(--cyan); }
+  .inset-node.wsl { border-color: rgba(138,92,246,0.3); color: #a78bfa; }
+  .inset-node.kali { border-color: rgba(99,102,241,0.3); color: #818cf8; }
+  .inset-node.nft { border-color: rgba(255,170,0,0.3); color: var(--amber); }
+
+  .inset-arrow { color: var(--text-dim); font-size: 0.7rem; }
+
+  /* ── Attack Panel ──────────────────────────── */
+  #attackPanel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: min(380px, 90vw);
+    height: 100%;
+    background: var(--panel);
+    border-left: 1px solid rgba(255,34,85,0.3);
+    z-index: 80;
+    transform: translateX(100%);
+    transition: transform 0.35s ease;
+    overflow-y: auto;
+    backdrop-filter: blur(12px);
+  }
+
+  #attackPanel.open { transform: translateX(0); }
+
+  .attack-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255,34,85,0.2);
+    background: rgba(255,34,85,0.05);
+  }
+
+  .attack-icon { font-size: 1.2rem; }
+  .attack-title { font-size: 0.75rem; letter-spacing: 1px; color: var(--red); font-weight: 700; flex: 1; }
+
+  .close-btn {
+    background: none;
+    border: 1px solid rgba(255,34,85,0.3);
+    color: var(--red);
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font);
+  }
+
+  .close-btn:hover { background: rgba(255,34,85,0.15); }
+
+  .attack-body { padding: 16px; }
+
+  .attack-node-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .attack-section {
+    margin-bottom: 16px;
+  }
+
+  .attack-section-title {
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .attack-section-title.red { color: var(--red); }
+  .attack-section-title.green { color: var(--green); }
+  .attack-section-title.amber { color: var(--amber); }
+
+  .attack-item {
+    font-size: 0.72rem;
+    line-height: 1.6;
+    padding-left: 12px;
+    position: relative;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .attack-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+  }
+
+  .attack-item.red::before { background: var(--red); box-shadow: 0 0 4px var(--red); }
+  .attack-item.green::before { background: var(--green); box-shadow: 0 0 4px var(--green); }
+  .attack-item.amber::before { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+
+  .attack-verdict {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    line-height: 1.5;
+  }
+
+  .attack-verdict.low { background: rgba(0,255,136,0.08); border: 1px solid rgba(0,255,136,0.2); color: var(--green); }
+  .attack-verdict.medium { background: rgba(255,170,0,0.08); border: 1px solid rgba(255,170,0,0.2); color: var(--amber); }
+  .attack-verdict.high { background: rgba(255,34,85,0.08); border: 1px solid rgba(255,34,85,0.2); color: var(--red); }
+
+  /* ── Legend ─────────────────────────────────── */
+  #legend {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    z-index: 50;
+    font-size: 0.6rem;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+    color: var(--text-dim);
+  }
+
+  .legend-item:last-child { margin-bottom: 0; }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.wg { background: var(--green); box-shadow: 0 0 4px var(--green); }
+  .legend-dot.tor { background: var(--magenta); box-shadow: 0 0 4px var(--magenta); }
+  .legend-dot.clear { background: var(--cyan); box-shadow: 0 0 4px var(--cyan); }
+  .legend-dot.atk { background: var(--red); box-shadow: 0 0 4px var(--red); }
+
+  /* ── Hints ─────────────────────────────────── */
+  .hint {
+    position: absolute;
+    bottom: 80px;
+    right: 12px;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    z-index: 50;
+    text-align: right;
+    line-height: 1.6;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Top Bar -->
+  <header id="topbar">
+    <h1>VPN-over-Tor Anonymization Chain</h1>
+    <div class="controls">
+      <button class="btn play-btn" id="btnPlay" onclick="togglePlay()">&#9654; PLAY</button>
+      <button class="btn active" id="btnVpn" onclick="setPath('vpn')">VPN-OVER-TOR</button>
+      <button class="btn" id="btnTor" onclick="setPath('tor')">DIRECT TOR</button>
+      <button class="btn attack-btn" id="btnAttack" onclick="toggleAttackMode()">&#9888; ATTACK SIM</button>
+      <div class="speed-ctrl">
+        <span>SPEED</span>
+        <input type="range" id="speedSlider" min="0.3" max="3" step="0.1" value="1" oninput="setSpeed(this.value)">
+        <span id="speedLbl">1.0x</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Viz -->
+  <div id="main">
+    <canvas id="mapCanvas"></canvas>
+
+    <!-- Detection Badge -->
+    <div id="detectBadge">
+      <div class="detect-label">TARGET SEES</div>
+      <div class="detect-row"><span class="lbl">IP</span><span class="val safe" id="dIp">---</span></div>
+      <div class="detect-row"><span class="lbl">IsTor</span><span class="val safe" id="dTor">---</span></div>
+      <div class="detect-row"><span class="lbl">Status</span><span class="val safe" id="dStatus">---</span></div>
+    </div>
+
+    <!-- Local Machine Inset -->
+    <div id="localInset">
+      <div class="inset-title">LOCAL MACHINE</div>
+      <div class="inset-flow">
+        <span class="inset-node win">Win 11</span>
+        <span class="inset-arrow">&rarr;</span>
+        <span class="inset-node wsl">WSL NAT</span>
+        <span class="inset-arrow">&rarr;</span>
+        <span class="inset-node kali">Kali</span>
+        <span class="inset-arrow">&rarr;</span>
+        <span class="inset-node nft">nftables</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div id="legend">
+      <div class="legend-item"><div class="legend-dot wg"></div> WireGuard</div>
+      <div class="legend-item"><div class="legend-dot tor"></div> Tor Circuit</div>
+      <div class="legend-item"><div class="legend-dot clear"></div> Cleartext</div>
+      <div class="legend-item"><div class="legend-dot atk"></div> Compromised</div>
+    </div>
+
+    <!-- Hints -->
+    <div class="hint" id="hintText">DRAG to rotate globe<br>CLICK node in Attack Sim mode</div>
+
+    <!-- Info Panel -->
+    <div id="infoPanel">
+      <div class="step-num" id="stepNum">READY</div>
+      <div class="step-text" id="stepText">Press <code>PLAY</code> to animate the packet flow through the anonymization chain.</div>
+    </div>
+
+    <!-- Attack Panel -->
+    <div id="attackPanel">
+      <div class="attack-header">
+        <span class="attack-icon">&#9888;</span>
+        <span class="attack-title">NODE COMPROMISED</span>
+        <button class="close-btn" onclick="closeAttackPanel()">&#10005;</button>
+      </div>
+      <div class="attack-body" id="attackBody"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// 1. CONTINENT DATA (simplified polygon outlines)
+// ═══════════════════════════════════════════════
+const CONTINENTS = [
+  // North America
+  {c:'#00e5ff', pts:[[-130,50],[-140,58],[-165,60],[-168,66],[-162,72],[-140,73],[-120,76],[-100,78],[-85,76],[-70,64],[-58,50],[-62,46],[-67,44],[-72,42],[-75,36],[-80,32],[-82,25],[-88,20],[-92,18],[-97,18],[-102,20],[-107,24],[-112,28],[-117,32],[-120,36],[-123,40],[-125,46],[-130,50]]},
+  // Central America
+  {c:'#00e5ff', pts:[[-88,20],[-86,16],[-84,14],[-83,11],[-80,8],[-78,8],[-82,10],[-86,14],[-88,18],[-88,20]]},
+  // South America
+  {c:'#00e5ff', pts:[[-78,10],[-74,12],[-65,11],[-58,6],[-50,2],[-44,-1],[-38,-3],[-35,-6],[-35,-14],[-38,-18],[-42,-22],[-48,-28],[-53,-33],[-58,-38],[-64,-44],[-68,-54],[-72,-50],[-74,-42],[-72,-20],[-70,-14],[-74,-6],[-78,0],[-80,6],[-78,10]]},
+  // Europe
+  {c:'#00e5ff', pts:[[-10,36],[-5,36],[0,39],[3,44],[-3,44],[-9,44],[-10,48],[-5,52],[0,51],[6,48],[10,46],[14,44],[16,42],[20,40],[24,38],[28,38],[30,42],[28,46],[24,49],[20,53],[23,56],[28,60],[30,66],[26,70],[18,70],[12,64],[8,60],[4,57],[0,54],[-5,56],[-9,52],[-10,48],[-10,36]]},
+  // UK & Ireland
+  {c:'#00e5ff', pts:[[-8,50],[-6,50],[-5,52],[-3,54],[-2,57],[-4,58],[-6,58],[-5,54],[-7,52],[-8,50]]},
+  // Africa
+  {c:'#00e5ff', pts:[[-17,15],[-14,11],[-8,5],[-4,5],[2,5],[8,4],[12,0],[18,-5],[26,-12],[32,-18],[36,-26],[34,-34],[28,-34],[24,-30],[18,-24],[16,-18],[20,-10],[26,-4],[30,0],[33,6],[38,12],[42,16],[38,20],[35,24],[33,30],[30,35],[24,36],[18,35],[10,33],[4,35],[0,35],[-6,35],[-12,32],[-16,26],[-17,20],[-17,15]]},
+  // Asia (mainland)
+  {c:'#00e5ff', pts:[[30,42],[36,38],[42,38],[46,40],[50,38],[56,30],[60,25],[68,26],[74,20],[78,10],[80,14],[86,22],[90,22],[94,18],[100,14],[102,2],[104,6],[108,16],[112,22],[118,24],[120,30],[124,34],[128,36],[132,38],[136,36],[140,40],[142,46],[146,52],[152,56],[160,62],[170,66],[180,68],[180,72],[168,72],[158,66],[148,58],[140,50],[132,44],[124,50],[116,54],[106,54],[96,50],[86,48],[78,44],[70,42],[60,44],[52,42],[44,44],[38,42],[30,42]]},
+  // India
+  {c:'#00e5ff', pts:[[68,26],[72,22],[76,16],[78,8],[80,12],[78,18],[74,22],[68,26]]},
+  // Australia
+  {c:'#00e5ff', pts:[[116,-14],[122,-14],[130,-12],[136,-14],[140,-20],[146,-22],[150,-26],[152,-30],[150,-36],[146,-38],[140,-38],[136,-34],[130,-32],[124,-32],[118,-34],[114,-30],[114,-22],[116,-14]]},
+  // Japan
+  {c:'#00e5ff', pts:[[130,31],[132,34],[136,36],[140,40],[142,44],[144,44],[142,40],[138,36],[134,32],[130,31]]},
+  // New Zealand
+  {c:'#00e5ff', pts:[[166,-35],[170,-40],[174,-44],[174,-46],[172,-46],[170,-42],[168,-38],[166,-35]]},
+  // Greenland
+  {c:'#00e5ff', pts:[[-55,60],[-46,60],[-36,64],[-24,70],[-18,76],[-22,82],[-36,84],[-48,82],[-55,78],[-56,72],[-55,64],[-55,60]]},
+  // Iceland
+  {c:'#00e5ff', pts:[[-24,64],[-20,64],[-14,66],[-14,66],[-18,66],[-24,66],[-24,64]]},
+  // Indonesia (very simplified)
+  {c:'#00e5ff', pts:[[96,-2],[100,0],[106,0],[110,-2],[114,-7],[118,-8],[120,-8],[118,-10],[112,-8],[106,-4],[100,-2],[96,-2]]}
+];
+
+// ═══════════════════════════════════════════════
+// 2. NODE DEFINITIONS (geographic positions)
+// ═══════════════════════════════════════════════
+const NODES = {
+  'origin':       { lat: 47.0, lon: 7.5,    label: 'YOU',           sub: 'Central Europe',    color: '#00e5ff', icon: '\u{1F4BB}' },
+  'mullvad-ch':   { lat: 47.4, lon: 8.5,    label: 'MULLVAD CH',    sub: 'WireGuard Entry',   color: '#00ff88', icon: '\u{1F6E1}' },
+  'mullvad-ro':   { lat: 44.4, lon: 26.1,   label: 'MULLVAD RO',    sub: 'Multihop Exit',     color: '#00ff88', icon: '\u{1F6E1}' },
+  'tor-entry':    { lat: 52.5, lon: 13.4,    label: 'TOR GUARD',     sub: 'Entry Node',        color: '#ff00e5', icon: '\u{1F9C5}' },
+  'tor-relay':    { lat: 60.2, lon: 24.9,    label: 'TOR RELAY',     sub: 'Middle Node',       color: '#ff00e5', icon: '\u{1F9C5}' },
+  'tor-exit':     { lat: 40.7, lon: -74.0,   label: 'TOR EXIT',      sub: 'Exit Node',         color: '#ff00e5', icon: '\u{1F9C5}' },
+  'mullvad-pt':   { lat: 38.7, lon: -9.1,    label: 'MULLVAD PT',    sub: 'Portugal Exit',     color: '#00ff88', icon: '\u{1F6E1}' },
+  'target':       { lat: 37.8, lon: -122.4,  label: 'TARGET',        sub: 'Destination',       color: '#ff2255', icon: '\u{1F3AF}' }
+};
+
+// ═══════════════════════════════════════════════
+// 3. ROUTE DEFINITIONS
+// ═══════════════════════════════════════════════
+const ROUTES = {
+  vpn: {
+    nodeOrder: ['origin','mullvad-ch','mullvad-ro','tor-entry','tor-relay','tor-exit','mullvad-pt','target'],
+    steps: [
+      { from:'origin', to:'mullvad-ch', type:'wg',
+        label:'STEP 1 \u2014 WireGuard Entry',
+        desc:'Traffic leaves your PC wrapped in <code>WireGuard</code>. ISP sees only encrypted UDP to Mullvad Switzerland.' },
+      { from:'mullvad-ch', to:'mullvad-ro', type:'wg',
+        label:'STEP 2 \u2014 Mullvad Multihop',
+        desc:'Mullvad routes through an internal <code>CH \u2192 RO multihop</code>. Even Mullvad CH cannot see the decrypted traffic.' },
+      { from:'mullvad-ro', to:'tor-entry', type:'tor',
+        label:'STEP 3 \u2014 Into the Tor Network',
+        desc:'Decrypted at Romania, enters Kali via WSL NAT. <code>nftables tor_exempt</code> lets Tor bypass Mullvad-Kali. Wrapped in 3 Tor layers.' },
+      { from:'tor-entry', to:'tor-relay', type:'tor',
+        label:'STEP 4 \u2014 Tor Middle Relay',
+        desc:'Guard peels one layer, forwards to middle relay. The relay knows <strong>neither source nor destination</strong>.' },
+      { from:'tor-relay', to:'tor-exit', type:'tor',
+        label:'STEP 5 \u2014 Tor Exit Node',
+        desc:'Middle relay forwards to exit. Exit strips last Tor layer but traffic is still <code>WireGuard-encrypted</code> (udp2tcp) \u2014 no cleartext leak.' },
+      { from:'tor-exit', to:'mullvad-pt', type:'wg',
+        label:'STEP 6 \u2014 Mullvad Portugal',
+        desc:'Mullvad Portugal server receives via <code>udp2tcp</code>, decrypts the WireGuard layer. Your real IP is 6+ hops away.' },
+      { from:'mullvad-pt', to:'target', type:'clear',
+        label:'STEP 7 \u2014 Target Reached',
+        desc:'Target sees a <code>clean Mullvad Portugal IP</code>. IsTor: false. Not blacklisted. Maximum anonymity, minimum detection.' }
+    ],
+    result: { ip: '149.88.xx.xx', tor: 'false', status: 'Clean VPN IP', flag: '\u{1F1F5}\u{1F1F9}', safe: true }
+  },
+  tor: {
+    nodeOrder: ['origin','mullvad-ch','mullvad-ro','tor-entry','tor-relay','tor-exit','target'],
+    steps: [
+      { from:'origin', to:'mullvad-ch', type:'wg',
+        label:'STEP 1 \u2014 WireGuard Entry',
+        desc:'Same Mullvad WireGuard tunnel protects the first hop. ISP sees nothing.' },
+      { from:'mullvad-ch', to:'mullvad-ro', type:'wg',
+        label:'STEP 2 \u2014 Mullvad Multihop',
+        desc:'Internal CH \u2192 RO hop via Mullvad backbone.' },
+      { from:'mullvad-ro', to:'tor-entry', type:'tor',
+        label:'STEP 3 \u2014 Tor via proxychains4',
+        desc:'App uses <code>proxychains4</code> to force traffic through Tor SOCKS5. 3 layers of Tor encryption.' },
+      { from:'tor-entry', to:'tor-relay', type:'tor',
+        label:'STEP 4 \u2014 Tor Middle Relay',
+        desc:'Standard Tor routing. Middle relay sees nothing useful.' },
+      { from:'tor-relay', to:'tor-exit', type:'tor',
+        label:'STEP 5 \u2014 Tor Exit Node',
+        desc:'Exit strips final Tor layer. <strong>CAN see cleartext</strong> if not using HTTPS. No WireGuard wrap on this path.' },
+      { from:'tor-exit', to:'target', type:'clear',
+        label:'STEP 6 \u2014 Target Reached',
+        desc:'Target sees a <code>Tor exit IP</code>. IsTor: true. Many services will CAPTCHA or block.' }
+    ],
+    result: { ip: 'Tor Exit IP', tor: 'true', status: 'Tor Detected', flag: '\u{1F9C5}', safe: false }
+  }
+};
+
+// ═══════════════════════════════════════════════
+// 4. ATTACK SCENARIOS
+// ═══════════════════════════════════════════════
+const ATTACKS = {
+  'origin': {
+    name: 'Your PC (Windows 11)',
+    risk: 'high',
+    canSee: [
+      'All local files, credentials, browser sessions',
+      'Mullvad account token & WireGuard keys',
+      'Your real IP address and ISP details'
+    ],
+    cannotSee: [
+      'Kali filesystem (WSL interop disabled, automount off)',
+      'Engagement data (isolated in Kali, no /mnt/c access)',
+      'Traffic content in transit (encrypted before leaving)'
+    ],
+    verdict: 'Full compromise of Windows, but WSL isolation prevents pivot to Kali operations. Attacker cannot access engagement data or tool output.'
+  },
+  'mullvad-ch': {
+    name: 'Mullvad Switzerland (Entry)',
+    risk: 'low',
+    canSee: [
+      'Your real IP connecting to this server',
+      'Encrypted WireGuard traffic volume and timing',
+      'That traffic is forwarded to Mullvad Romania'
+    ],
+    cannotSee: [
+      'Decrypted traffic content (only Romania decrypts)',
+      'Final destination or Tor usage',
+      'Any Kali activity or target interaction'
+    ],
+    verdict: 'Knows your real IP connects to Mullvad but cannot see content. Would need Romania + Tor correlation + Portugal logs to trace further. Mullvad keeps no logs.'
+  },
+  'mullvad-ro': {
+    name: 'Mullvad Romania (Multihop Exit)',
+    risk: 'low',
+    canSee: [
+      'Decrypted traffic entering WSL/Kali',
+      'That traffic connects to a Tor entry guard',
+      'Timing correlation between entry and Tor connection'
+    ],
+    cannotSee: [
+      'Your real IP (only sees Mullvad CH internal relay, not you)',
+      'Final destination (Tor encrypted from this point on)',
+      'Target interaction or Mullvad Portugal exit',
+      'Any way to trace back to you without Mullvad CH cooperation (no logs)'
+    ],
+    verdict: 'Sees traffic enters Tor but does not know your real IP \u2014 only sees the Mullvad CH internal hop. Would need: Mullvad CH cooperation (no logs) + Tor circuit de-anonymization + Mullvad PT logs. Three independent no-log entities across different jurisdictions.'
+  },
+  'tor-entry': {
+    name: 'Tor Entry Guard',
+    risk: 'low',
+    canSee: [
+      'Mullvad Romania IP as traffic source (NOT your real IP)',
+      'Encrypted Tor traffic forwarded to middle relay',
+      'Connection timing and data volume'
+    ],
+    cannotSee: [
+      'Your real IP (hidden behind 2 Mullvad hops)',
+      'Traffic content (2 more Tor layers remain)',
+      'Final destination or target server'
+    ],
+    verdict: 'Only sees a Mullvad IP, not you. Even if compromised alongside the exit, the 2-hop Mullvad chain before Tor makes timing correlation extremely difficult.'
+  },
+  'tor-relay': {
+    name: 'Tor Middle Relay',
+    risk: 'low',
+    canSee: [
+      'Entry guard IP and exit node IP only',
+      'Encrypted traffic passing through',
+      'Data volume (but not content)'
+    ],
+    cannotSee: [
+      'Source (your IP or Mullvad RO)',
+      'Destination (target or Mullvad PT)',
+      'Traffic content (encrypted both ways)'
+    ],
+    verdict: 'The weakest link in the chain for an attacker. Knows essentially nothing. Even compromising ALL Tor relays only reveals Mullvad RO \u2192 Mullvad PT, not your identity.'
+  },
+  'tor-exit': {
+    name: 'Tor Exit Node',
+    risk: 'low',
+    canSee: [
+      'WireGuard-encrypted traffic to Mullvad Portugal (VPN path)',
+      'Cleartext if no HTTPS (Direct Tor path only)',
+      'Mullvad PT server IP as destination'
+    ],
+    cannotSee: [
+      'Your real IP (5 hops back through Tor + Mullvad)',
+      'Traffic content on VPN path (WireGuard encrypted)',
+      'Your identity or location'
+    ],
+    verdict: 'On the VPN-over-Tor path, sees only WireGuard traffic \u2014 no cleartext. Would need to compromise Mullvad PT + break Tor circuit + compromise Mullvad CH. Practically impossible.'
+  },
+  'mullvad-pt': {
+    name: 'Mullvad Portugal (Kali Exit)',
+    risk: 'low',
+    canSee: [
+      'Decrypted traffic to target server',
+      'Target IP, request content, response data',
+      'Mullvad account ID (anonymous, no linked identity)'
+    ],
+    cannotSee: [
+      'Your real IP (traffic arrived via Tor \u2014 origin untraceable)',
+      'Your location, ISP, or Windows machine',
+      'The Tor circuit or Mullvad CH/RO hops',
+      'Any way to link the account to a real person (no logs, anonymous payment)'
+    ],
+    verdict: 'Sees what you do but has zero knowledge of who you are. Traffic arrived via Tor, account is anonymous, and Mullvad keeps no logs. To identify you: would need to break Tor anonymity (3 relays) + compromise 2 Mullvad hops across different jurisdictions. Practically impossible.'
+  },
+  'target': {
+    name: 'Target Server',
+    risk: 'low',
+    canSee: [
+      'Mullvad Portugal IP address (clean, not Tor-flagged)',
+      'Request content and behavior patterns',
+      'Browser fingerprint (if using a browser)'
+    ],
+    cannotSee: [
+      'Your real IP, ISP, or geographic location',
+      'That traffic came through Tor (IsTor: false)',
+      'Any layer of the anonymization chain'
+    ],
+    verdict: 'Sees a clean Mullvad IP from Portugal. No Tor detection, no blacklist flags. To find you: would need Mullvad PT cooperation + Tor de-anonymization + Mullvad RO/CH logs. At least 4 independent entities across multiple jurisdictions.'
+  }
+};
+
+// ═══════════════════════════════════════════════
+// 5. STATE
+// ═══════════════════════════════════════════════
+let currentPath = 'vpn';
+let isPlaying = false;
+let attackMode = false;
+let attackNode = null;
+let currentStep = -1;
+let speed = 1.0;
+let animTimer = null;
+
+// Globe rotation (radians)
+let rotY = 0.45;   // longitude rotation (~25 deg, Atlantic-centered)
+let rotX = 0.35;   // latitude tilt (~20 deg, looking slightly down)
+let targetRotY = rotY;
+let targetRotX = rotX;
+
+// Drag state
+let dragging = false;
+let dragStartX = 0, dragStartY = 0;
+let dragStartRotY = 0, dragStartRotX = 0;
+
+// Particle state
+let particles = [];  // { fromId, toId, t, type }
+let activeSegment = -1;
+let time = 0;
+
+// Canvas
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, CX = 0, CY = 0, R = 0;
+
+// ═══════════════════════════════════════════════
+// 6. PROJECTION MATH
+// ═══════════════════════════════════════════════
+function lonLatTo3D(lon, lat) {
+  const lr = lon * Math.PI / 180;
+  const la = lat * Math.PI / 180;
+  return { x: Math.cos(la) * Math.sin(lr), y: Math.sin(la), z: Math.cos(la) * Math.cos(lr) };
+}
+
+function rotate3D(p, rx, ry) {
+  // Rotate around Y (longitude)
+  let x = p.x * Math.cos(ry) + p.z * Math.sin(ry);
+  let z = -p.x * Math.sin(ry) + p.z * Math.cos(ry);
+  let y = p.y;
+  // Rotate around X (latitude tilt)
+  let y2 = y * Math.cos(rx) - z * Math.sin(rx);
+  let z2 = y * Math.sin(rx) + z * Math.cos(rx);
+  return { x, y: y2, z: z2 };
+}
+
+function project(p3) {
+  return { x: CX + p3.x * R, y: CY - p3.y * R, z: p3.z, visible: p3.z > -0.05 };
+}
+
+function geoToScreen(lon, lat) {
+  return project(rotate3D(lonLatTo3D(lon, lat), rotX, rotY));
+}
+
+// Spherical linear interpolation
+function slerp(p1, p2, t) {
+  const dot = Math.max(-1, Math.min(1, p1.x*p2.x + p1.y*p2.y + p1.z*p2.z));
+  const omega = Math.acos(dot);
+  if (omega < 0.001) {
+    return { x: p1.x+(p2.x-p1.x)*t, y: p1.y+(p2.y-p1.y)*t, z: p1.z+(p2.z-p1.z)*t };
+  }
+  const so = Math.sin(omega);
+  const a = Math.sin((1-t)*omega) / so;
+  const b = Math.sin(t*omega) / so;
+  return { x: a*p1.x+b*p2.x, y: a*p1.y+b*p2.y, z: a*p1.z+b*p2.z };
+}
+
+// ═══════════════════════════════════════════════
+// 7. CANVAS RENDERING
+// ═══════════════════════════════════════════════
+function resize() {
+  const main = document.getElementById('main');
+  W = canvas.width = main.clientWidth * devicePixelRatio;
+  H = canvas.height = main.clientHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const w = main.clientWidth, h = main.clientHeight;
+  CX = w / 2;
+  CY = h / 2 - 15;
+  R = Math.min(w, h) * 0.36;
+}
+
+function drawBackground() {
+  const w = W / devicePixelRatio, h = H / devicePixelRatio;
+  ctx.fillStyle = '#030810';
+  ctx.fillRect(0, 0, w, h);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(0, 229, 255, 0.025)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < w; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = 0; y < h; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+}
+
+function drawGlobe() {
+  // Atmosphere glow
+  const grd = ctx.createRadialGradient(CX, CY, R * 0.92, CX, CY, R * 1.25);
+  grd.addColorStop(0, 'rgba(0, 180, 255, 0.06)');
+  grd.addColorStop(0.5, 'rgba(0, 180, 255, 0.02)');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(CX, CY, R * 1.25, 0, Math.PI * 2); ctx.fill();
+
+  // Globe body
+  ctx.fillStyle = 'rgba(5, 15, 35, 0.95)';
+  ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2); ctx.fill();
+
+  // Globe edge glow
+  ctx.strokeStyle = 'rgba(0, 200, 255, 0.15)';
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = '#00ccff';
+  ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Latitude/longitude grid
+  ctx.strokeStyle = 'rgba(0, 229, 255, 0.05)';
+  ctx.lineWidth = 0.5;
+
+  // Latitude lines every 30 deg
+  for (let lat = -60; lat <= 60; lat += 30) {
+    ctx.beginPath();
+    let started = false;
+    for (let lon = -180; lon <= 180; lon += 3) {
+      const p = geoToScreen(lon, lat);
+      if (p.visible) {
+        if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+        else ctx.lineTo(p.x, p.y);
+      } else { started = false; }
+    }
+    ctx.stroke();
+  }
+
+  // Longitude lines every 30 deg
+  for (let lon = -180; lon < 180; lon += 30) {
+    ctx.beginPath();
+    let started = false;
+    for (let lat = -90; lat <= 90; lat += 3) {
+      const p = geoToScreen(lon, lat);
+      if (p.visible) {
+        if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+        else ctx.lineTo(p.x, p.y);
+      } else { started = false; }
+    }
+    ctx.stroke();
+  }
+}
+
+function drawContinents() {
+  CONTINENTS.forEach(cont => {
+    // Fill
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.04)';
+    ctx.beginPath();
+    let firstVisible = null;
+    let anyVisible = false;
+    cont.pts.forEach(([lon, lat], i) => {
+      const p = geoToScreen(lon, lat);
+      if (p.visible) {
+        anyVisible = true;
+        if (!firstVisible) { ctx.moveTo(p.x, p.y); firstVisible = p; }
+        else ctx.lineTo(p.x, p.y);
+      }
+    });
+    if (anyVisible) { ctx.closePath(); ctx.fill(); }
+
+    // Outline
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    let started = false;
+    cont.pts.forEach(([lon, lat]) => {
+      const p = geoToScreen(lon, lat);
+      if (p.visible) {
+        if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+        else ctx.lineTo(p.x, p.y);
+      } else { started = false; }
+    });
+    if (started) ctx.stroke();
+  });
+}
+
+function drawRoutes() {
+  const route = ROUTES[currentPath];
+  route.steps.forEach((step, i) => {
+    const n1 = NODES[step.from], n2 = NODES[step.to];
+    const p1_3d = lonLatTo3D(n1.lon, n1.lat);
+    const p2_3d = lonLatTo3D(n2.lon, n2.lat);
+
+    const isActive = i <= activeSegment;
+    const isCurrentSeg = i === activeSegment;
+
+    // Draw great circle arc
+    const segments = 60;
+    ctx.beginPath();
+    let started = false;
+    for (let s = 0; s <= segments; s++) {
+      const t = s / segments;
+      const pt = slerp(p1_3d, p2_3d, t);
+      const rp = project(rotate3D(pt, rotX, rotY));
+      if (rp.visible) {
+        if (!started) { ctx.moveTo(rp.x, rp.y); started = true; }
+        else ctx.lineTo(rp.x, rp.y);
+      } else { started = false; }
+    }
+
+    if (isActive) {
+      const col = step.type === 'wg' ? '#00ff88' : step.type === 'tor' ? '#ff00e5' : '#00e5ff';
+      ctx.strokeStyle = col;
+      ctx.lineWidth = isCurrentSeg ? 2.5 : 1.8;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = isCurrentSeg ? 14 : 6;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    } else {
+      ctx.strokeStyle = 'rgba(42, 58, 92, 0.4)';
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([4, 6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  });
+}
+
+function drawNodes() {
+  const route = ROUTES[currentPath];
+  const nodeIds = route.nodeOrder;
+  const nodeScreenPos = {};
+
+  nodeIds.forEach(id => {
+    const n = NODES[id];
+    const p = geoToScreen(n.lon, n.lat);
+    nodeScreenPos[id] = p;
+
+    if (!p.visible) return;
+
+    const isActive = route.steps.some((s, i) => i <= activeSegment && (s.from === id || s.to === id));
+    const isAttacked = attackMode && attackNode === id;
+    const baseAlpha = 0.3 + p.z * 0.7; // fade based on depth
+
+    // Pulse ring
+    if (isActive || isAttacked) {
+      const pulse = Math.sin(time * 3) * 0.3 + 0.7;
+      const col = isAttacked ? 'rgba(255,34,85,' : `rgba(${hexToRgb(n.color)},`;
+      const rad = isAttacked ? 18 : 14;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad * pulse, 0, Math.PI * 2);
+      ctx.strokeStyle = col + (0.4 * pulse * baseAlpha) + ')';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Node dot
+    const dotR = isActive ? 6 : 4;
+    const col = isAttacked ? '#ff2255' : n.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = isActive ? 16 : 8;
+    ctx.globalAlpha = baseAlpha;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    // Label
+    ctx.font = '600 9px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(200,220,235,${baseAlpha * 0.9})`;
+    ctx.fillText(n.label, p.x, p.y - 14);
+
+    // Sublabel
+    ctx.font = '8px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = `rgba(74,96,128,${baseAlpha * 0.8})`;
+    ctx.fillText(n.sub, p.x, p.y + 18);
+  });
+
+  return nodeScreenPos;
+}
+
+function drawParticles() {
+  particles.forEach(part => {
+    const n1 = NODES[part.fromId], n2 = NODES[part.toId];
+    const p1_3d = lonLatTo3D(n1.lon, n1.lat);
+    const p2_3d = lonLatTo3D(n2.lon, n2.lat);
+    const pt = slerp(p1_3d, p2_3d, part.t);
+    const rp = project(rotate3D(pt, rotX, rotY));
+
+    if (!rp.visible) return;
+
+    const col = part.type === 'wg' ? '#00ff88' : part.type === 'tor' ? '#ff00e5' : '#00e5ff';
+    const alpha = 0.3 + rp.z * 0.7;
+
+    // Glow
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = col.replace(')', `,${0.15 * alpha})`).replace('rgb', 'rgba').replace('#', '');
+    // Use radial gradient instead
+    const grd = ctx.createRadialGradient(rp.x, rp.y, 0, rp.x, rp.y, 10);
+    grd.addColorStop(0, hexToRgba(col, 0.5 * alpha));
+    grd.addColorStop(1, hexToRgba(col, 0));
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(col, alpha);
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 15;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Trail (3 ghost positions behind)
+    for (let trail = 1; trail <= 4; trail++) {
+      const tt = Math.max(0, part.t - trail * 0.04);
+      const tp = slerp(p1_3d, p2_3d, tt);
+      const trp = project(rotate3D(tp, rotX, rotY));
+      if (!trp.visible) continue;
+      const ta = (1 - trail / 5) * 0.4 * alpha;
+      ctx.beginPath();
+      ctx.arc(trp.x, trp.y, 3 - trail * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = hexToRgba(col, ta);
+      ctx.fill();
+    }
+  });
+}
+
+function drawScanLine() {
+  const w = W / devicePixelRatio, h = H / devicePixelRatio;
+  const scanY = (time * 40) % h;
+  ctx.fillStyle = 'rgba(0, 229, 255, 0.015)';
+  ctx.fillRect(0, scanY - 40, w, 80);
+  ctx.fillStyle = 'rgba(0, 229, 255, 0.05)';
+  ctx.fillRect(0, scanY - 0.5, w, 1);
+}
+
+function drawVignette() {
+  const w = W / devicePixelRatio, h = H / devicePixelRatio;
+  const grd = ctx.createRadialGradient(CX, CY, R * 0.8, CX, CY, Math.max(w, h) * 0.7);
+  grd.addColorStop(0, 'transparent');
+  grd.addColorStop(1, 'rgba(3, 8, 16, 0.6)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function drawAttackOverlay(nodeScreenPos) {
+  if (!attackMode || !attackNode) return;
+
+  const route = ROUTES[currentPath];
+  const steps = route.steps;
+  const atk = ATTACKS[attackNode];
+  if (!atk) return;
+
+  // Find which segments the compromised node is on
+  steps.forEach((step, i) => {
+    const n1 = NODES[step.from], n2 = NODES[step.to];
+    const canSeeSegment = (step.from === attackNode || step.to === attackNode);
+    if (!canSeeSegment) return;
+
+    // Draw red highlight on visible segments
+    const p1_3d = lonLatTo3D(n1.lon, n1.lat);
+    const p2_3d = lonLatTo3D(n2.lon, n2.lat);
+    ctx.beginPath();
+    let started = false;
+    for (let s = 0; s <= 40; s++) {
+      const t = s / 40;
+      const pt = slerp(p1_3d, p2_3d, t);
+      const rp = project(rotate3D(pt, rotX, rotY));
+      if (rp.visible) {
+        if (!started) { ctx.moveTo(rp.x, rp.y); started = true; }
+        else ctx.lineTo(rp.x, rp.y);
+      } else { started = false; }
+    }
+    ctx.strokeStyle = '#ff2255';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#ff2255';
+    ctx.shadowBlur = 12;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  });
+}
+
+// ═══════════════════════════════════════════════
+// 8. MAIN RENDER LOOP
+// ═══════════════════════════════════════════════
+let lastNodeScreenPos = {};
+
+function render(ts) {
+  time = ts / 1000;
+
+  // Smooth rotation interpolation
+  rotY += (targetRotY - rotY) * 0.04;
+  rotX += (targetRotX - rotX) * 0.04;
+
+  // Update particles
+  particles.forEach(p => { p.t += 0.008 * speed; });
+  particles = particles.filter(p => p.t <= 1);
+
+  // Clear & draw
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  drawBackground();
+  drawScanLine();
+  drawGlobe();
+  drawContinents();
+  drawRoutes();
+  drawAttackOverlay(lastNodeScreenPos);
+  drawParticles();
+  lastNodeScreenPos = drawNodes();
+  drawVignette();
+
+  requestAnimationFrame(render);
+}
+
+// ═══════════════════════════════════════════════
+// 9. ANIMATION CONTROLLER
+// ═══════════════════════════════════════════════
+function togglePlay() {
+  if (isPlaying) stopAnim(); else startAnim();
+}
+
+function startAnim() {
+  if (attackMode) toggleAttackMode(); // exit attack mode
+  isPlaying = true;
+  currentStep = -1;
+  activeSegment = -1;
+  particles = [];
+  document.getElementById('btnPlay').innerHTML = '&#9632; STOP';
+  document.getElementById('btnPlay').classList.add('running');
+  document.getElementById('detectBadge').classList.remove('visible');
+  nextStep();
+}
+
+function stopAnim() {
+  isPlaying = false;
+  clearTimeout(animTimer);
+  activeSegment = -1;
+  particles = [];
+  document.getElementById('btnPlay').innerHTML = '&#9654; PLAY';
+  document.getElementById('btnPlay').classList.remove('running');
+  document.getElementById('stepNum').textContent = 'READY';
+  document.getElementById('stepText').innerHTML = 'Press <code>PLAY</code> to animate the packet flow.';
+}
+
+function nextStep() {
+  if (!isPlaying) return;
+  const route = ROUTES[currentPath];
+  currentStep++;
+
+  if (currentStep >= route.steps.length) {
+    showResult();
+    return;
+  }
+
+  const step = route.steps[currentStep];
+  activeSegment = currentStep;
+
+  // Update info
+  document.getElementById('stepNum').textContent = step.label;
+  document.getElementById('stepDesc') && 0;
+  document.getElementById('stepText').innerHTML = step.desc;
+
+  // Rotate globe to face the midpoint of this segment
+  const n1 = NODES[step.from], n2 = NODES[step.to];
+  const midLon = (n1.lon + n2.lon) / 2;
+  const midLat = (n1.lat + n2.lat) / 2;
+  targetRotY = -midLon * Math.PI / 180 + Math.PI / 2;
+  targetRotX = midLat * Math.PI / 180 * 0.5 + 0.1;
+
+  // Spawn particle
+  particles.push({ fromId: step.from, toId: step.to, t: 0, type: step.type });
+
+  // Schedule next step
+  const duration = 2200 / speed;
+  animTimer = setTimeout(nextStep, duration);
+}
+
+function showResult() {
+  const res = ROUTES[currentPath].result;
+
+  document.getElementById('stepNum').textContent = 'CHAIN COMPLETE';
+  document.getElementById('stepText').innerHTML = res.safe
+    ? `Target sees <code>${res.flag} ${res.ip}</code> \u2014 a clean Mullvad Portugal IP. <strong>Not flagged as Tor. Not blacklisted. Identity buried under 7 layers.</strong>`
+    : `Target sees <code>${res.flag} ${res.ip}</code> \u2014 a known Tor exit. <strong>IsTor: true. May be blocked or CAPTCHAed.</strong>`;
+
+  // Show detection badge
+  const badge = document.getElementById('detectBadge');
+  document.getElementById('dIp').textContent = res.flag + ' ' + res.ip;
+  document.getElementById('dIp').className = 'val ' + (res.safe ? 'safe' : 'warn');
+  document.getElementById('dTor').textContent = res.tor;
+  document.getElementById('dTor').className = 'val ' + (res.safe ? 'safe' : 'warn');
+  document.getElementById('dStatus').textContent = res.status;
+  document.getElementById('dStatus').className = 'val ' + (res.safe ? 'safe' : 'warn');
+  badge.classList.add('visible');
+
+  setTimeout(() => {
+    if (isPlaying) {
+      isPlaying = false;
+      document.getElementById('btnPlay').innerHTML = '&#9654; REPLAY';
+      document.getElementById('btnPlay').classList.remove('running');
+    }
+  }, 3000);
+}
+
+// ═══════════════════════════════════════════════
+// 10. ATTACK SIMULATION
+// ═══════════════════════════════════════════════
+function toggleAttackMode() {
+  attackMode = !attackMode;
+  const btn = document.getElementById('btnAttack');
+  btn.classList.toggle('active', attackMode);
+
+  if (!attackMode) {
+    closeAttackPanel();
+    attackNode = null;
+    document.getElementById('hintText').innerHTML = 'DRAG to rotate globe';
+  } else {
+    if (isPlaying) stopAnim();
+    // Show all segments for attack mode
+    activeSegment = ROUTES[currentPath].steps.length - 1;
+    document.getElementById('hintText').innerHTML = 'CLICK a node to simulate compromise';
+    document.getElementById('stepNum').textContent = 'ATTACK SIMULATION';
+    document.getElementById('stepText').innerHTML = 'Click any node on the globe to see what an attacker at that position could learn about you.';
+  }
+}
+
+function handleNodeClick(x, y) {
+  if (!attackMode) return;
+
+  const route = ROUTES[currentPath];
+  let closestId = null;
+  let closestDist = Infinity;
+
+  route.nodeOrder.forEach(id => {
+    const n = NODES[id];
+    const p = geoToScreen(n.lon, n.lat);
+    if (!p.visible) return;
+    const dx = p.x - x, dy = p.y - y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 30 && dist < closestDist) {
+      closestDist = dist;
+      closestId = id;
+    }
+  });
+
+  if (closestId) {
+    attackNode = closestId;
+    showAttackPanel(closestId);
+  }
+}
+
+function showAttackPanel(nodeId) {
+  const atk = ATTACKS[nodeId];
+  if (!atk) return;
+
+  const body = document.getElementById('attackBody');
+  body.innerHTML = `
+    <div class="attack-node-name">${atk.name}</div>
+    <div class="attack-section">
+      <div class="attack-section-title red">&#9888; ATTACKER CAN SEE</div>
+      ${atk.canSee.map(s => `<div class="attack-item red">${s}</div>`).join('')}
+    </div>
+    <div class="attack-section">
+      <div class="attack-section-title green">&#10004; ATTACKER CANNOT SEE</div>
+      ${atk.cannotSee.map(s => `<div class="attack-item green">${s}</div>`).join('')}
+    </div>
+    <div class="attack-section">
+      <div class="attack-section-title amber">&#9889; TO DEANONYMIZE</div>
+      <div class="attack-item amber">${atk.verdict}</div>
+    </div>
+    <div class="attack-verdict ${atk.risk}">
+      RISK LEVEL: ${atk.risk.toUpperCase()}
+    </div>
+  `;
+
+  document.getElementById('attackPanel').classList.add('open');
+
+  // Rotate globe to show the attacked node
+  const n = NODES[nodeId];
+  targetRotY = -n.lon * Math.PI / 180 + Math.PI / 2;
+  targetRotX = n.lat * Math.PI / 180 * 0.5 + 0.1;
+}
+
+function closeAttackPanel() {
+  document.getElementById('attackPanel').classList.remove('open');
+  attackNode = null;
+}
+
+// ═══════════════════════════════════════════════
+// 11. CONTROLS & EVENTS
+// ═══════════════════════════════════════════════
+function setPath(p) {
+  if (isPlaying) stopAnim();
+  currentPath = p;
+  activeSegment = attackMode ? ROUTES[p].steps.length - 1 : -1;
+  attackNode = null;
+  closeAttackPanel();
+  particles = [];
+  document.getElementById('btnVpn').classList.toggle('active', p === 'vpn');
+  document.getElementById('btnTor').classList.toggle('active', p === 'tor');
+  document.getElementById('detectBadge').classList.remove('visible');
+  if (!attackMode) {
+    document.getElementById('stepNum').textContent = 'READY';
+    document.getElementById('stepText').innerHTML = `Press <code>PLAY</code> to animate the <strong>${p === 'vpn' ? 'VPN-over-Tor' : 'Direct Tor'}</strong> path.`;
+  }
+}
+
+function setSpeed(val) {
+  speed = parseFloat(val);
+  document.getElementById('speedLbl').textContent = speed.toFixed(1) + 'x';
+}
+
+// Mouse drag for rotation
+canvas.addEventListener('mousedown', (e) => {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragStartRotY = targetRotY;
+  dragStartRotX = targetRotX;
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  targetRotY = dragStartRotY + (e.clientX - dragStartX) * 0.005;
+  targetRotX = dragStartRotX + (e.clientY - dragStartY) * 0.005;
+  targetRotX = Math.max(-1.2, Math.min(1.2, targetRotX));
+});
+
+window.addEventListener('mouseup', () => { dragging = false; });
+
+// Click for attack mode
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  handleNodeClick(x, y);
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    dragging = true;
+    dragStartX = e.touches[0].clientX;
+    dragStartY = e.touches[0].clientY;
+    dragStartRotY = targetRotY;
+    dragStartRotX = targetRotX;
+    e.preventDefault();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  if (!dragging || e.touches.length !== 1) return;
+  targetRotY = dragStartRotY + (e.touches[0].clientX - dragStartX) * 0.005;
+  targetRotX = dragStartRotX + (e.touches[0].clientY - dragStartY) * 0.005;
+  targetRotX = Math.max(-1.2, Math.min(1.2, targetRotX));
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  if (dragging && e.changedTouches.length === 1) {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.changedTouches[0].clientX - rect.left;
+    const y = e.changedTouches[0].clientY - rect.top;
+    const dx = e.changedTouches[0].clientX - dragStartX;
+    const dy = e.changedTouches[0].clientY - dragStartY;
+    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) handleNodeClick(x, y);
+  }
+  dragging = false;
+});
+
+window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════════════
+// 12. HELPERS
+// ═══════════════════════════════════════════════
+function hexToRgb(hex) {
+  hex = hex.replace('#', '');
+  return parseInt(hex.substring(0,2),16) + ',' + parseInt(hex.substring(2,4),16) + ',' + parseInt(hex.substring(4,6),16);
+}
+
+function hexToRgba(hex, a) {
+  return 'rgba(' + hexToRgb(hex) + ',' + a + ')';
+}
+
+// ═══════════════════════════════════════════════
+// 13. INIT
+// ═══════════════════════════════════════════════
+resize();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

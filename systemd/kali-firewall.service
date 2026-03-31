@@ -1,0 +1,26 @@
+[Unit]
+Description=Kali WSL Firewall — Host isolation
+After=network-online.target
+Wants=network-online.target
+Before=tor.service mullvad-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/kali-firewall.sh
+RemainAfterExit=yes
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

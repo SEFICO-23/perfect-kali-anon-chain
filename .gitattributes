@@ -1,0 +1,20 @@
+# Force LF line endings in the repo (regardless of OS)
+* text=auto eol=lf
+
+# Shell scripts must be LF (bash chokes on CRLF)
+*.sh text eol=lf
+
+# Config files
+*.conf text eol=lf
+*.service text eol=lf
+
+# Python
+*.py text eol=lf
+
+# Docs
+*.md text eol=lf
+
+# Explicitly binary
+*.png binary
+*.jpg binary
+*.gif binary
